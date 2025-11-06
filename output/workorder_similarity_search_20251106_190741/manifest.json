@@ -1,0 +1,29 @@
+{
+  "generated_at": "2025-11-06T19:07:41.581555",
+  "generator_version": "0.1.0",
+  "input_hash": "15e7530cc244147d",
+  "metadata": {
+    "category": "asset",
+    "description": "Search for work orders with similar descriptions using vector embeddings",
+    "tags": [
+      "workorder",
+      "search",
+      "vector",
+      "similarity"
+    ]
+  },
+  "skill_id": "workorder_similarity_search",
+  "skill_name": "Find Similar Work Orders",
+  "version": "1.0.0",
+  "workflow": {
+    "edge_count": 4,
+    "execution_order": [
+      "generate_embedding",
+      "vector_search",
+      "enrich_results",
+      "summarize_findings",
+      "display_results"
+    ],
+    "node_count": 5
+  }
+}

@@ -1,0 +1,91 @@
+skill:
+  metadata:
+    id: workorder_similarity_search
+    name: "Find Similar Work Orders"
+    description: "Search for work orders with similar descriptions using vector embeddings"
+    category: asset
+    tags: [workorder, search, vector, similarity]
+
+  triggers:
+    keywords:
+      - find similar work orders
+      - search similar failures
+      - previous similar issues
+
+  inputs:
+    parameters:
+      - name: workorder_description
+        type: string
+        required: true
+      - name: limit
+        type: integer
+        required: false
+        default: 10
+
+  workflow:
+    nodes:
+      - id: generate_embedding
+        type: function_call
+        config:
+          function_name: /api/embeddings/generate
+          function_params:
+        outputs:
+          - name: embedding
+            type: array
+
+      - id: vector_search
+        type: function_call
+        config:
+          function_name: VectorSearchWorkOrders
+          function_params:
+            embedding: "{{embedding}}"
+            limit: "{{limit}}"
+        outputs:
+          - name: similar_workorders
+            type: array
+
+      - id: enrich_results
+        type: function_call
+        config:
+          function_name: MxFetchWorkOrderDetails
+          function_params:
+            workorder_ids: "{{similar_workorders}}"
+
+      - id: summarize_findings
+        type: llm_call
+        config:
+          model: claude-sonnet-4-5
+          prompt_template: |
+            You found these similar work orders for: "{{workorder_description}}"
+            
+            Similar Work Orders:
+            {{enriched_results}}
+            
+            Provide:
+            1. Summary of common issues
+            2. Solutions that worked
+            3. Parts commonly needed
+            4. Estimated resolution time
+          temperature: 0.3
+
+      - id: display_results
+        type: visualizer
+        config:
+          component_type: card
+          template:
+            title: "Similar Work Orders"
+            sections:
+              - type: summary
+                data: "{{summarized_findings}}"
+              - type: list
+                data: "{{enriched_results}}"
+
+    edges:
+      - source_node: generate_embedding
+        target_node: vector_search
+      - source_node: vector_search
+        target_node: enrich_results
+      - source_node: enrich_results
+        target_node: summarize_findings
+      - source_node: summarize_findings
+        target_node: display_results

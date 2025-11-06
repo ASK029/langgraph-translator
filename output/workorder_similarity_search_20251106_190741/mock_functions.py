@@ -1,0 +1,182 @@
+"""
+Mock Function Library for Find Similar Work Orders
+
+Auto-generated deterministic mocks for all function calls.
+Generated: 2025-11-06T19:07:41.580556
+"""
+
+import random
+import hashlib
+import json
+from typing import Dict, Any, List
+import io
+import base64
+import textwrap
+import matplotlib.pyplot as plt
+
+
+class MockFunctionLibrary:
+    """Deterministic, structure-aware mock implementations."""
+    
+    def __init__(self, seed: str = "default"):
+        self.seed = seed
+        self.rng = random.Random(self._hash_seed(seed))
+    
+    def _hash_seed(self, seed: str) -> int:
+        """Create deterministic integer seed from string."""
+        return int(hashlib.md5(seed.encode()).hexdigest()[:8], 16)
+    
+    # ================== Core Dispatcher ==================
+    
+    def call_api(self, endpoint: str, params: Dict[str, Any]) -> Any:
+        """Route API calls to appropriate mock handler."""
+        print(f"  [Mock API] {endpoint} with params: {params}")
+        mock_method_name = f"_mock_api_{endpoint.strip('/').replace('/', '_')}"
+        if hasattr(self, mock_method_name):
+            return getattr(self, mock_method_name)(params)
+        return {"status": "mocked", "endpoint": endpoint, "params": params}
+    
+    def call_function(self, function_name: str, params: Dict[str, Any]) -> Any:
+        """Route function calls to appropriate mock handler."""
+        print(f"  [Mock Function] {function_name} with params: {params}")
+        mock_method_name = f"_mock_{function_name}"
+        if hasattr(self, mock_method_name):
+            return getattr(self, mock_method_name)(params)
+        return self._default_mock(function_name, params)
+    
+    def llm_call(self, prompt: str, config: Dict[str, Any]) -> str:
+        """Mock LLM call with deterministic response."""
+        prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:8]
+        llm_summary = (
+            "1. Common Issue: Pump vibration.\n"
+            "2. Solution: Re-align shaft.\n"
+            "3. Parts: Shims (x4), Bolts (x2).\n"
+            f"4. Resolution Time: 4 hours (hash: {prompt_hash})"
+        )
+        return llm_summary
+    
+    def visualize(self, visualization_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Mock visualization rendering with Matplotlib.
+        Generates a plot based on component_type and returns a base64 image.
+        """
+        component_type = visualization_data.get("component_type", "unknown")
+        resolved_template = visualization_data.get("resolved_template", {})
+        print(f"  [Mock Visualize] Generating '{component_type}' plot")
+
+        fig, ax = plt.subplots(figsize=(12, 7), dpi=100)
+        ax.axis("off")
+        title = resolved_template.get("title", "Visualization")
+        fig.suptitle(title, fontsize=16, y=0.98)
+
+        if component_type == "card":
+            # A 'card' from the YAML has a summary and a list.
+            # We will render the summary as text and the list as a table.
+            sections = resolved_template.get("sections", [])
+            list_data = None
+            summary_data = "No summary data found."
+
+            for section in sections:
+                if section.get("type") == "list":
+                    list_data = section.get("data")
+                elif section.get("type") == "summary":
+                    summary_data = str(section.get("data", summary_data))
+            
+            # 1. Render Summary Text
+            wrapped_summary = textwrap.fill(summary_data, width=100)
+            ax.text(
+                0.5, 0.85, wrapped_summary, 
+                ha="center", va="top", fontsize=10, 
+                transform=ax.transAxes, wrap=True,
+                bbox=dict(boxstyle="round,pad=0.5", fc="aliceblue", ec="lightsteelblue")
+            )
+
+            # 2. Render List as Table
+            if (
+                list_data 
+                and isinstance(list_data, str) # Check if it's the stringified JSON
+            ):
+                # Try to parse it back into a list of dicts
+                try:
+                    list_data = json.loads(list_data)
+                except json.JSONDecodeError:
+                    list_data = None # Failed to parse, treat as no data
+
+            if (
+                list_data 
+                and isinstance(list_data, list) 
+                and len(list_data) > 0 
+                and isinstance(list_data[0], dict)
+            ):
+                cols = list(list_data[0].keys())
+                # Truncate cell text for display
+                cell_text = [
+                    [
+                     (str(item.get(col, ""))[:75] + "...") 
+                        if len(str(item.get(col, ""))) > 75 
+                        else str(item.get(col, ""))
+                        for col in cols
+                    ]
+                    for item in list_data
+              ]
+                
+                table = ax.table(
+                    cellText=cell_text, colLabels=cols, 
+                    loc="center", cellLoc="left"
+                )
+                table.auto_set_font_size(False)
+                table.set_fontsize(8)
+                table.scale(1, 1.5)
+                # Adjust layout to make room for table
+                plt.subplots_adjust(left=0.05, right=0.95, top=0.9, bottom=0.1)
+
+            else:
+                ax.text(0.5, 0.4, "No list data found to display in table.", 
+                        ha="center", va="center", transform=ax.transAxes, fontsize=12)
+        
+        else:
+            # Default fallback for unknown component types
+            ax.text(0.5, 0.5, f"No Matplotlib visualizer implemented for: {component_type}",
+                    ha="center", va="center", transform=ax.transAxes, fontsize=12)
+        
+        # Convert plot to base64 string
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png", bbox_inches="tight")
+        buf.seek(0)
+        image_base64 = base64.b64encode(buf.read()).decode("utf-8")
+        plt.close(fig)
+
+        return {
+            "rendered": True,
+            "component": component_type,
+            "image_base64": image_base64,
+            "message": f"Matplotlib plot for {component_type} generated."
+        }
+    
+    # ================== Helpers ==================
+    
+    def _default_mock(self, name: str, params: Dict[str, Any]) -> Any:
+        """Default mock for any undefined function."""
+        # Mix deterministic random output
+        hash_val = int(hashlib.md5(json.dumps(params, sort_keys=True).encode()).hexdigest()[:8], 16)
+        self.rng.seed(hash_val)
+        return {
+            "function": name,
+            "params": params,
+            "result": {"mock_value": self.rng.random(), "hash": hash_val}
+        }
+
+    def _combine_inputs(self, params: Dict[str, Any]) -> Any:
+        """Combine and mutate inputs for void-style functions."""
+        combined = {}
+        for k, v in params.items():
+            if isinstance(v, dict):
+                combined.update(v)
+            else:
+                combined[k] = v
+        # Simulate an in-place modification
+        combined["modified"] = True
+        return combined
+    
+    # ================== Auto-Generated Mocks ==================
+    

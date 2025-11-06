@@ -1,0 +1,278 @@
+"""
+Auto-generated LangGraph workflow from Skill YAML.
+
+Skill: {{ skill_name }}
+Generated: {{ timestamp }}
+"""
+
+from typing import Dict, Any, List, TypedDict, Annotated
+from langgraph.graph import StateGraph, END, START
+from langgraph.graph.message import add_messages
+from mock_functions import MockFunctionLibrary
+
+
+class GraphState(TypedDict):
+    """State for the workflow graph."""
+    {% for param in input_params %}
+    {{ param.name }}: Any
+    {% endfor %}
+    {% for node in nodes %}
+    {% if node.outputs %}
+    {% for output in node.outputs %}
+    {{ output.name }}: Any
+    {% endfor %}
+    {% elif node.inferred_output %}
+    {{ node.inferred_output }}: Any
+    {% endif %}
+    {% endfor %}
+
+
+class {{ class_name }}:
+    """
+    {{ description }}
+        
+    LangGraph workflow implementation.
+    """
+        
+    def __init__(self, mock_seed: str = "{{ skill_id }}"):
+        self.mock_lib = MockFunctionLibrary(seed=mock_seed)
+        self.graph = self._build_graph()
+        
+    def _build_graph(self) -> StateGraph:
+        """Build and compile the LangGraph workflow."""
+        graph = StateGraph(GraphState)
+        
+        # Add all nodes
+        {% for node in nodes %}
+        graph.add_node("{{ node.id }}", self._node_{{ node.id }})
+        {% endfor %}
+        
+        # Add edges
+        {% for edge in edges %}
+        graph.add_edge("{{ edge.source }}", "{{ edge.target }}")
+        {% endfor %}
+        
+        # Set entry point
+        {% if start_node %}
+        graph.add_edge(START, "{{ start_node }}")
+        {% elif nodes %}
+        graph.add_edge(START, "{{ nodes[0].id }}")
+        {% endif %}
+        
+        # Set exit point
+        {% if end_node %}
+        graph.add_edge("{{ end_node }}", END)
+        {% elif nodes %}
+        graph.add_edge("{{ nodes[-1].id }}", END)
+        {% endif %}
+        
+        return graph.compile()
+        
+    {% for node in nodes %}
+    def _node_{{ node.id }}(self, state: GraphState) -> GraphState:
+        """Node: {{ node.id }} ({{ node.type }})"""
+        print(f"[Executing] {{ node.id }} ({{ node.type }})")
+        
+        {% if node.type == 'function_call' %}
+        # Function call node
+        {% if node.config.function_name.startswith('/api/') %}
+        # API call
+        params = {{ (node.config.function_params or {}) | tojson }}
+        resolved_params = self._resolve_params(params, state)
+        result = self.mock_lib.call_api("{{ node.config.function_name }}", resolved_params)
+        {% else %}
+        # Regular function call
+        params = {{ (node.config.function_params or {}) | tojson }}
+        resolved_params = self._resolve_params(params, state)
+        result = self.mock_lib.call_function("{{ node.config.function_name }}", resolved_params)
+        {% endif %}
+        
+        # Store outputs - if no outputs, this is a void function that modifies state
+        {% if node.outputs %}
+        {% for output in node.outputs %}
+        {% if output.type == 'array' and node.outputs|length == 1 %}
+        # Single output - store result directly
+        state["{{ output.name }}"] = result
+        {% else %}
+        # Multiple outputs - extract from result
+        state["{{ output.name }}"] = result.get("{{ output.name }}", result) if isinstance(result, dict) else result
+        {% endif %}
+        {% endfor %}
+        {% elif node.inferred_output %}
+        state["{{ node.inferred_output }}"] = result
+        {% else %}
+        if isinstance(result, dict):
+            state.update(result)
+        {% endif %}
+        
+        {% elif node.type == 'llm_call' %}
+        # LLM call node
+        prompt_template = """{{ node.config.prompt_template | replace('"""', '\\"\\"\\"') }}"""
+        prompt = self._resolve_template(prompt_template, state)
+        
+        config = {
+            "model": "{{ node.config.model }}",
+            "temperature": {{ node.config.temperature or 0.7 }}
+        }
+        
+        result = self.mock_lib.llm_call(prompt, config)
+        
+        {% if node.outputs %}
+        {% for output in node.outputs %}
+        state["{{ output.name }}"] = result
+        {% endfor %}
+        {% elif node.inferred_output %}
+        state["{{ node.inferred_output }}"] = result
+        {% else %}
+        state["{{ node.id }}"] = result
+        {% endif %}
+        
+        {% elif node.type == 'visualizer' %}
+        # Visualizer node
+        template = {{ node.config.template or {} | tojson }}
+        import json
+        template_str = json.dumps(template)
+        resolved_str = self._resolve_template(template_str, state)
+        resolved_template = json.loads(resolved_str)
+        
+        visualization_data = {
+            "component_type": "{{ node.config.component_type }}",
+            "template": template,
+            "resolved_template": resolved_template
+        }
+        
+        result = self.mock_lib.visualize(visualization_data)
+        state["{{ node.id }}_visualization"] = result
+        
+        {% elif node.type == 'user_approval' %}
+        print(f"[User Approval Required] {{ node.id }}")
+        result = {"approved": True, "note": "Auto-approved in mock mode"}
+        state["{{ node.id }}_approval"] = result
+        {% endif %}
+        
+        print(f"[Completed] {{ node.id }}")
+        return state
+        
+    {% endfor %}
+        
+    def _resolve_template(self, template: str, state: GraphState) -> str:
+        """Resolve {{variable}} placeholders safely inside JSON templates."""
+        import re, json
+
+        pattern = r'\{\{(\w+)\}\}'
+
+        def replacer(match):
+            var_name = match.group(1)
+            value = state.get(var_name)
+            if value is None:
+                raise ValueError(
+                    f"Variable '{var_name}' not found in state. Available: {list(state.keys())}"
+                )
+            
+            # === START FIX: Robust JSON value escaping ===
+            # 1. Convert value to its string representation
+            if isinstance(value, (dict, list)):
+                value_str = json.dumps(value, ensure_ascii=False)
+            elif isinstance(value, (int, float, bool)):
+                value_str = json.dumps(value) # Handles true/false/123
+            else:
+                value_str = str(value)
+
+            # 2. Escape that string representation so it can be safely
+            #   injected *inside* the template's JSON quotes
+            safe_str = value_str.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
+            return safe_str
+            # === END FIX ===
+
+        return re.sub(pattern, replacer, template)
+
+
+        
+    {% raw %}
+    def _resolve_param_variable(self, template_str: str, state: Dict[str, Any]) -> Any:
+        """
+        Resolves a '{{var}}' string to its corresponding value in state.
+        This returns the *actual object* (list, dict, str), not a string-escaped version.
+        """
+        import re
+        # Simple match for '{{var_name}}'
+        match = re.fullmatch(r'\{\{(\w+)\}\}', template_str)
+        
+        if not match:
+            # Handle complex f-strings like "Error on {{asset}}"
+            pattern = r'\{\{(\w+)\}\}'
+            
+            def replacer(match):
+                var_name = match.group(1)
+                value = state.get(var_name)
+                if value is None:
+                    raise ValueError(f"Variable '{var_name}' not found in state. Available: {list(state.keys())}")
+                return str(value)
+                
+            return re.sub(pattern, replacer, template_str)
+
+        # Pure '{{var_name}}' match, return the raw object
+        var_name = match.group(1)
+        if var_name not in state:
+             raise ValueError(f"Variable '{var_name}' not found in state. Available: {list(state.keys())}")
+        return state[var_name]
+
+    def _resolve_params(self, params: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+        """Resolve all {{variable}} references in a params dict."""
+        resolved = {}
+        for key, value in params.items():
+            if isinstance(value, str) and '{{' in value:
+                # === START FIX: Use the correct resolver ===
+                # Use the new helper that returns the raw object, not the JSON-escaped string
+                 resolved[key] = self._resolve_param_variable(value, state)
+                # === END FIX ===
+            elif isinstance(value, list):
+                resolved[key] = [
+                    # === START FIX: Use the correct resolver ===
+                     self._resolve_param_variable(item, state) if isinstance(item, str) and '{{' in item else item
+                    # === END FIX ===
+                    for item in value
+                ]
+            else:
+                resolved[key] = value
+        return resolved
+    {% endraw %}
+        
+    def execute(self, inputs: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute the workflow."""
+        required_inputs = {{ required_inputs }}
+        for req in required_inputs:
+            if req not in inputs:
+                raise ValueError(f"Missing required input: {req}")
+        
+        initial_state: GraphState = {}
+        for param in inputs:
+            initial_state[param] = inputs[param]
+        
+        final_state = self.graph.invoke(initial_state)
+        return final_state
+
+
+def main():
+    """Example execution."""
+    workflow = {{ class_name }}()
+        
+    inputs = {
+        {% for param in input_params %}
+        "{{ param.name }}": {{ param.example_value | tojson }},
+        {% endfor %}
+    }
+        
+    print("Starting workflow execution...")
+    print(f"Inputs: {inputs}")
+    print("-" * 60)
+        
+    result = workflow.execute(inputs)
+        
+    print("-" * 60)
+    print("Workflow completed!")
+    print(f"Final state: {result}")
+
+
+if __name__ == "__main__":
+    main()
